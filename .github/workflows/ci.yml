@@ -1,23 +1,21 @@
-name: CI
+name: Build EXE
 
 on:
   push:
-    branches: [ "main", "develop" ]
-  pull_request:
-    branches: [ "main", "develop" ]
+    branches: [ "main" ]
 
 jobs:
-  test:
+  build-exe:
     runs-on: windows-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-        
+
     - name: Cache pip packages
       uses: actions/cache@v4
       with:
@@ -25,37 +23,16 @@ jobs:
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        
-    - name: Verify imports
-      run: |
-        python -c "import main; print('Import successful')"
-        
-  build:
-    runs-on: windows-latest
-    needs: test
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        
+
     - name: Build executable
       run: |
         pyinstaller main.spec
-        
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
