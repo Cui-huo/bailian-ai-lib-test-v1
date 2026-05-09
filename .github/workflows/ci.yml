@@ -1,8 +1,7 @@
 name: Build EXE
 
 on:
-  push:
-    branches: [ "main" ]
+  workflow_dispatch:  # 手动触发
 
 jobs:
   build-exe:
@@ -10,6 +9,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        lfs: true  # 启用 LFS 支持
 
     - name: Set up Python
       uses: actions/setup-python@v5
