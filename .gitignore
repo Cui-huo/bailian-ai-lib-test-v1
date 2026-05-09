@@ -38,27 +38,8 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# 输出目录（用户生成的文件）
-output/
-*.wav
-*.mp3
-*.png
-*.jpg
-*.jpeg
-*.gif
-
-# 测试资源（assets 目录中的媒体文件不上传）
-assets/*.wav
-assets/*.mp3
-assets/*.mp4
-assets/*.png
-assets/*.jpg
-assets/*.jpeg
-assets/*.gif
-
 # Qwen Code 配置
 .qwen/
 
-# 允许 assets 和 output 目录结构上传（但排除内容）
-!assets/.gitkeep
-!output/.gitkeep
+# 输出目录（用户生成的文件，不上传）
+output/
