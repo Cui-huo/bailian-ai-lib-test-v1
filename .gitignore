@@ -43,3 +43,4 @@ Thumbs.db
 
 # 输出目录（用户生成的文件，不上传）
 output/
+audio_clone/
