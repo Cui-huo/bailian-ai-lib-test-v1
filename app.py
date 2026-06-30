@@ -12,7 +12,18 @@ Date: 2026/6/30
 import base64
 import json
 import os
+import sys
 import time
+
+# console=False (Windows GUI) 时 sys.stdout/stderr 为 None，
+# uvicorn 日志初始化 isatty() 会崩溃，必须提前重定向
+# 重定向到日志文件而非丢弃，确保错误信息可追踪
+if sys.stdout is None:
+    _early_log = Path(sys.executable).parent / "gradio_debug.log"
+    sys.stdout = open(str(_early_log), "a")
+if sys.stderr is None:
+    _early_log = Path(sys.executable).parent / "gradio_debug.log"
+    sys.stderr = open(str(_early_log), "a")
 import wave
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +50,24 @@ from core.utils import (
     get_timestamp_by_time,
     get_file_by_url,
 )
+
+# ==================== 启动诊断日志 ====================
+import logging
+
+# 强制行缓冲 —— 确保控制台实时输出，不会因缓冲区导致"无显示"
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
+# 日志文件写入 exe 同目录（frozen）或项目根目录（开发）
+_LOG_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
+_LOG_FILE = _LOG_DIR / "gradio_debug.log"
+logging.basicConfig(
+    filename=str(_LOG_FILE),
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logging.info("=== 程序启动，Python %s ===", sys.version)
+print(f"[LOG] 诊断日志写入: {_LOG_FILE}", flush=True)
 
 # ==================== 预加载配置 ====================
 VOICES_COSYVOICE = get_voices_for_llm_version("cosyvoice-v2")
@@ -728,6 +757,50 @@ def multimodal_chat(text, voice_display, progress=gr.Progress()):
     return text_content, audio_path
 
 
+# ==================== 🔑 API 密钥管理 ====================
+
+def _get_env_path() -> Path:
+    """获取 .env 文件路径，兼容开发环境和 PyInstaller 打包环境"""
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent / ".env"
+    return Path(__file__).parent / ".env"
+
+
+def _load_api_key() -> str:
+    """读取已保存的 API 密钥，用于初始化显示"""
+    env_path = _get_env_path()
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("DASHSCOPE_API_KEY="):
+                val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if val:
+                    return val
+    return ""
+
+
+def save_api_key(api_key: str) -> str:
+    """保存 API 密钥到 .env 文件，同时设置到当前进程环境变量"""
+    key = api_key.strip()
+    if not key:
+        return "⚠️ 请输入有效的 API 密钥"
+    env_path = _get_env_path()
+    lines = []
+    found = False
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("DASHSCOPE_API_KEY="):
+                lines.append(f'DASHSCOPE_API_KEY="{key}"')
+                found = True
+            else:
+                lines.append(line)
+    if not found:
+        lines.append(f'DASHSCOPE_API_KEY="{key}"')
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.environ["DASHSCOPE_API_KEY"] = key
+    return f"✅ 密钥已保存到 {env_path.name}"
+
+
 # ==================== 🏗️ 构建 Gradio 界面 ====================
 
 CSS = """
@@ -742,6 +815,24 @@ def build_ui():
             """# 🚀 AI 工具箱
             基于**阿里云百炼平台（DashScope）**，提供语音合成、图像理解、视频分析、文生图/视频、多轮对话等 AI 能力。
             """
+        )
+
+        # ========== API 密钥设置 ==========
+        with gr.Row():
+            api_key_box = gr.Textbox(
+                label="🔑 API 密钥（DashScope）",
+                placeholder="sk-...  填入后点击保存，自动写入 .env 文件",
+                type="password",
+                scale=4,
+                value=_load_api_key(),
+            )
+            with gr.Column(scale=1, min_width=100):
+                api_key_save_btn = gr.Button("💾 保存密钥", variant="secondary")
+                api_key_status = gr.Markdown("", elem_id="api-status")
+        api_key_save_btn.click(
+            fn=save_api_key,
+            inputs=api_key_box,
+            outputs=api_key_status,
         )
 
         # ========== 🎵 音频功能 ==========
@@ -1136,11 +1227,40 @@ def build_ui():
 # ==================== 入口 ====================
 
 if __name__ == "__main__":
-    demo = build_ui()
-    demo.queue(default_concurrency_limit=5).launch(
-        server_name="127.0.0.1",
-        server_port=7860,
-        share=False,
-        theme=gr.themes.Soft(),
-        css=CSS,
-    )
+    import traceback
+    try:
+        print("=" * 50, flush=True)
+        print("  AI 工具箱 v1.0 - 正在启动...", flush=True)
+        print("=" * 50, flush=True)
+
+        # console=False 时 sys.stdout/stderr 为 None，uvicorn 日志初始化会崩溃
+        # 改为写入日志文件而非丢弃到 /dev/null，确保错误信息可追踪
+        if sys.stdout is None:
+            sys.stdout = open(str(_LOG_FILE), "a")
+        if sys.stderr is None:
+            sys.stderr = open(str(_LOG_FILE), "a")
+
+        logging.info("开始构建 Gradio 界面...")
+        print("[启动] 正在构建界面...", flush=True)
+        demo = build_ui()
+        logging.info("界面构建完成，准备启动服务器")
+
+        print("[启动] 正在启动 Web 服务器...", flush=True)
+        demo.queue(default_concurrency_limit=5).launch(
+            server_name="127.0.0.1",
+            server_port=7860,
+            share=False,
+            quiet=False,
+            inbrowser=True,
+            theme=gr.themes.Soft(),
+            css=CSS,
+        )
+    except Exception:
+        err_msg = traceback.format_exc()
+        err_log = _get_env_path().parent / "error.log"
+        err_log.write_text(err_msg, encoding="utf-8")
+        logging.critical("程序崩溃:\n%s", err_msg)
+        print(f"\n❌ 程序发生错误，详情见: {err_log}", flush=True)
+        print(err_msg, flush=True)
+        input("按回车键关闭...")
+        raise
